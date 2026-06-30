@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { api, ApiError, CONTENT_TYPES } from '../api';
 import AlertMessage from './AlertMessage.vue';
+import ExamManager from './ExamManager.vue';
 
 const courses = ref([]);
 const loading = ref(true);
@@ -14,11 +15,19 @@ const creating = ref(false);
 // Selected course (full detail with contents)
 const selected = ref(null);
 
-// New-content form
+// Step 3: the content item clicked in the list, loaded from its own endpoint.
+const viewedId = ref(null);
+const viewedContent = ref(null);
+const viewLoading = ref(false);
+const viewError = ref(null);
+
+// Content form — doubles as the "add" and "edit" form. `editingId` is null when
+// creating a new item, or the id of the content item being edited.
 const blankContent = () => ({ type: 'note', title: '', payload: {} });
 const content = reactive(blankContent());
 const contentErrors = ref({});
 const savingContent = ref(false);
+const editingId = ref(null);
 
 const pdfInput = ref(null);
 const uploadingPdf = ref(false);
@@ -79,10 +88,28 @@ async function selectCourse(id) {
     error.value = null;
     Object.assign(content, blankContent());
     contentErrors.value = {};
+    editingId.value = null;
+    viewedId.value = null;
+    viewedContent.value = null;
     try {
         selected.value = (await api.course(id)).data;
     } catch (e) {
         error.value = 'Could not open course.';
+    }
+}
+
+/** Step 3: load one content item's full data when its row is clicked. */
+async function viewContent(item) {
+    viewedId.value = item.id;
+    viewedContent.value = null;
+    viewError.value = null;
+    viewLoading.value = true;
+    try {
+        viewedContent.value = (await api.showContent(selected.value.id, item.id)).data;
+    } catch (e) {
+        viewError.value = 'Could not load this content item.';
+    } finally {
+        viewLoading.value = false;
     }
 }
 
@@ -109,23 +136,58 @@ async function deleteCourse(course) {
     }
 }
 
-async function addContent() {
+/** Load the clicked item's data into the form and switch to edit mode. */
+async function startEdit(item) {
+    error.value = null;
+    contentErrors.value = {};
+    pdfError.value = null;
+    try {
+        const data = (await api.showContent(selected.value.id, item.id)).data;
+        editingId.value = data.id;
+        Object.assign(content, {
+            type: data.type,
+            title: data.title,
+            payload: { ...data.payload },
+        });
+    } catch (e) {
+        error.value = 'Could not load this content item.';
+    }
+}
+
+/** Leave edit mode and clear the form back to a blank "add" state. */
+function cancelEdit() {
+    editingId.value = null;
+    Object.assign(content, blankContent());
+    contentErrors.value = {};
+    pdfError.value = null;
+}
+
+/** Create a new content item, or update the one being edited. */
+async function saveContent() {
     savingContent.value = true;
     contentErrors.value = {};
+    const payload = {
+        type: content.type,
+        title: content.title,
+        payload: { ...content.payload },
+    };
     try {
-        await api.addContent(selected.value.id, {
-            type: content.type,
-            title: content.title,
-            payload: { ...content.payload },
-        });
+        if (editingId.value) {
+            await api.updateContent(selected.value.id, editingId.value, payload);
+        } else {
+            await api.addContent(selected.value.id, payload);
+        }
+        editingId.value = null;
         Object.assign(content, blankContent());
+        viewedId.value = null;
+        viewedContent.value = null;
         await selectCourse(selected.value.id);
         await load();
     } catch (e) {
         if (e instanceof ApiError) {
             contentErrors.value = e.errors;
         } else {
-            error.value = 'Could not add content.';
+            error.value = 'Could not save content.';
         }
     } finally {
         savingContent.value = false;
@@ -136,6 +198,10 @@ async function deleteContent(item) {
     if (!confirm(`Delete "${item.title}"?`)) return;
     try {
         await api.deleteContent(selected.value.id, item.id);
+        if (viewedId.value === item.id) {
+            viewedId.value = null;
+            viewedContent.value = null;
+        }
         await selectCourse(selected.value.id);
         await load();
     } catch (e) {
@@ -220,19 +286,51 @@ onMounted(load);
                             <p class="text-xs text-slate-500">{{ selected.contents.length }} content items</p>
                         </div>
                         <ul class="divide-y divide-slate-100">
-                            <li v-for="item in selected.contents" :key="item.id" class="flex items-center justify-between px-5 py-3">
-                                <div class="flex items-center gap-3">
-                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold uppercase" :class="typeBadge[item.type]">{{ item.type }}</span>
-                                    <span class="text-sm text-slate-800">{{ item.title }}</span>
-                                </div>
-                                <button class="text-xs text-red-500 hover:text-red-700" @click="deleteContent(item)">Delete</button>
-                            </li>
+                            <template v-for="item in selected.contents" :key="item.id">
+                                <li class="flex items-center justify-between px-5 py-3" :class="viewedId === item.id ? 'bg-indigo-50/50' : ''">
+                                    <button class="flex items-center gap-3 text-left" @click="viewContent(item)">
+                                        <span class="rounded-full px-2 py-0.5 text-xs font-semibold uppercase" :class="typeBadge[item.type]">{{ item.type }}</span>
+                                        <span class="text-sm text-slate-800 hover:text-indigo-600">{{ item.title }}</span>
+                                    </button>
+                                    <div class="flex items-center gap-3">
+                                        <button class="text-xs font-medium text-indigo-600 hover:text-indigo-500" :class="editingId === item.id ? 'underline' : ''" @click="startEdit(item)">Edit</button>
+                                        <button class="text-xs text-red-500 hover:text-red-700" @click="deleteContent(item)">Delete</button>
+                                    </div>
+                                </li>
+
+                                <!-- Step 3: clicked content item's data, loaded from its own endpoint. -->
+                                <li v-if="viewedId === item.id" class="bg-slate-50 px-5 py-3">
+                                    <p v-if="viewLoading" class="text-xs text-slate-400">Loading…</p>
+                                    <AlertMessage v-else-if="viewError" type="error" :message="viewError" />
+                                    <template v-else-if="viewedContent">
+                                        <dl class="space-y-1 text-xs">
+                                            <div v-for="(value, key) in viewedContent.payload" :key="key" class="flex gap-2">
+                                                <dt class="min-w-28 font-semibold uppercase tracking-wide text-slate-500">{{ key }}</dt>
+                                                <dd class="break-all text-slate-800">{{ value }}</dd>
+                                            </div>
+                                            <p v-if="!Object.keys(viewedContent.payload || {}).length" class="text-slate-400">No extra data for this item.</p>
+                                        </dl>
+
+                                        <!-- Exam builder + analytics for exam content items -->
+                                        <ExamManager
+                                            v-if="viewedContent.type === 'exam'"
+                                            :key="viewedContent.id"
+                                            class="mt-3"
+                                            :course-id="selected.id"
+                                            :content-id="viewedContent.id"
+                                        />
+                                    </template>
+                                </li>
+                            </template>
                             <li v-if="!selected.contents.length" class="px-5 py-8 text-center text-sm text-slate-400">No content yet.</li>
                         </ul>
                     </div>
 
-                    <form class="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-5" @submit.prevent="addContent">
-                        <h3 class="font-semibold text-slate-900">Add content</h3>
+                    <form class="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-5" @submit.prevent="saveContent">
+                        <div class="flex items-center justify-between">
+                            <h3 class="font-semibold text-slate-900">{{ editingId ? 'Edit content' : 'Add content' }}</h3>
+                            <button v-if="editingId" type="button" class="text-xs text-slate-500 hover:text-slate-700" @click="cancelEdit">Cancel</button>
+                        </div>
 
                         <div class="grid grid-cols-2 gap-3">
                             <select v-model="content.type" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -278,7 +376,7 @@ onMounted(load);
                         </div>
 
                         <button :disabled="savingContent" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
-                            {{ savingContent ? 'Saving…' : 'Add content' }}
+                            {{ savingContent ? 'Saving…' : (editingId ? 'Save changes' : 'Add content') }}
                         </button>
                     </form>
                 </div>

@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { api, clearToken } from '../api';
 import AdminDashboard from './AdminDashboard.vue';
 import AdminCourses from './AdminCourses.vue';
+import QuestionBank from './QuestionBank.vue';
 
 const props = defineProps({
     admin: { type: Object, required: true },
@@ -10,12 +11,13 @@ const props = defineProps({
 
 const emit = defineEmits(['logout']);
 
-const tab = ref('dashboard'); // dashboard | courses
+const tab = ref('dashboard'); // dashboard | courses | questions
 const loggingOut = ref(false);
 
 const tabs = [
     { key: 'dashboard', label: 'Users' },
     { key: 'courses', label: 'Courses' },
+    { key: 'questions', label: 'Question Bank' },
 ];
 
 async function logout() {
@@ -65,5 +67,6 @@ async function logout() {
 
         <AdminDashboard v-if="tab === 'dashboard'" />
         <AdminCourses v-else-if="tab === 'courses'" />
+        <QuestionBank v-else-if="tab === 'questions'" />
     </div>
 </template>

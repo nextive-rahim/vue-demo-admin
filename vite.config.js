@@ -10,7 +10,7 @@ export default defineConfig({
     proxy: {
       // Forward API calls to the Laravel Demo API (served by Herd) to avoid CORS in dev.
       '/api': {
-        target: 'http://laravel-demo.test',
+        target: 'http://laravel-demo-api.test',
         changeOrigin: true,
       },
     },

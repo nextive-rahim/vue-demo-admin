@@ -114,10 +114,52 @@ export const api = {
     },
 
     // Course content items
+    showContent: (courseId, contentId) => request('GET', `/admin/courses/${courseId}/contents/${contentId}`),
     addContent: (courseId, payload) => request('POST', `/admin/courses/${courseId}/contents`, payload),
     updateContent: (courseId, contentId, payload) => request('PUT', `/admin/courses/${courseId}/contents/${contentId}`, payload),
     deleteContent: (courseId, contentId) => request('DELETE', `/admin/courses/${courseId}/contents/${contentId}`),
+
+    // MCQ store — categories
+    categories: () => request('GET', '/admin/categories'),
+    category: (id) => request('GET', `/admin/categories/${id}`),
+    createCategory: (payload) => request('POST', '/admin/categories', payload),
+    updateCategory: (id, payload) => request('PUT', `/admin/categories/${id}`, payload),
+    deleteCategory: (id) => request('DELETE', `/admin/categories/${id}`),
+
+    // MCQ store — subcategories
+    subcategories: (categoryId = null) => request('GET', `/admin/subcategories${query({ category_id: categoryId })}`),
+    createSubcategory: (payload) => request('POST', '/admin/subcategories', payload),
+    updateSubcategory: (id, payload) => request('PUT', `/admin/subcategories/${id}`, payload),
+    deleteSubcategory: (id) => request('DELETE', `/admin/subcategories/${id}`),
+
+    // MCQ store — questions
+    questions: (filters = {}) => request('GET', `/admin/questions${query(filters)}`),
+    question: (id) => request('GET', `/admin/questions/${id}`),
+    createQuestion: (payload) => request('POST', '/admin/questions', payload),
+    updateQuestion: (id, payload) => request('PUT', `/admin/questions/${id}`, payload),
+    deleteQuestion: (id) => request('DELETE', `/admin/questions/${id}`),
+
+    // Exam builder — attach store questions to an exam content item
+    examQuestions: (courseId, contentId) => request('GET', `/admin/courses/${courseId}/contents/${contentId}/questions`),
+    attachExamQuestions: (courseId, contentId, questionIds) => request('POST', `/admin/courses/${courseId}/contents/${contentId}/questions`, { question_ids: questionIds }),
+    detachExamQuestion: (courseId, contentId, questionId) => request('DELETE', `/admin/courses/${courseId}/contents/${contentId}/questions/${questionId}`),
+
+    // Exam analytics
+    examAttempts: (courseId, contentId) => request('GET', `/admin/courses/${courseId}/contents/${contentId}/attempts`),
+    examAnalysis: (courseId, contentId) => request('GET', `/admin/courses/${courseId}/contents/${contentId}/analysis`),
 };
+
+/** Build a `?a=1&b=2` query string from a params object, skipping null/undefined/empty values. */
+function query(params = {}) {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+        if (value !== null && value !== undefined && value !== '') {
+            search.append(key, value);
+        }
+    }
+    const string = search.toString();
+    return string ? `?${string}` : '';
+}
 
 // The six content types and the payload fields each one needs.
 export const CONTENT_TYPES = [
@@ -126,5 +168,5 @@ export const CONTENT_TYPES = [
     { value: 'video', label: 'Video', fields: [{ key: 'url', label: 'Video URL', type: 'url' }, { key: 'provider', label: 'Provider', type: 'text' }] },
     { value: 'live', label: 'Live', fields: [{ key: 'url', label: 'Join URL', type: 'url' }, { key: 'scheduled_at', label: 'Scheduled at', type: 'datetime-local' }] },
     { value: 'link', label: 'Link', fields: [{ key: 'url', label: 'URL', type: 'url' }] },
-    { value: 'exam', label: 'Exam', fields: [{ key: 'url', label: 'Exam URL', type: 'url' }, { key: 'duration_minutes', label: 'Duration (min)', type: 'number' }, { key: 'total_marks', label: 'Total marks', type: 'number' }] },
+    { value: 'exam', label: 'Exam', fields: [{ key: 'duration_minutes', label: 'Duration (min)', type: 'number' }, { key: 'start_time', label: 'Start time', type: 'datetime-local' }, { key: 'end_time', label: 'End time', type: 'datetime-local' }, { key: 'result_publish_time', label: 'Result publish time', type: 'datetime-local' }] },
 ];
